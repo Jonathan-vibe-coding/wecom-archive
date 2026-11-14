@@ -1,5 +1,8 @@
 use archive_domain::{MediaIntegrity, MessageV1};
-use archive_export::{ExportError, ExportParticipant, ExportSource, ExportStatistics};
+use archive_export::{
+    ExportCustomization, ExportError, ExportParticipant, ExportSource, ExportStatistics,
+    includes_message,
+};
 use archive_store::{ArchiveReadSnapshot, ArchiveStore, MessageQuery, StoreError};
 use chrono::{DateTime, Utc};
 use std::collections::{BTreeMap, BTreeSet};
@@ -13,6 +16,7 @@ pub struct ArchiveExportOptions {
     pub query: MessageQuery,
     pub conversation_ids: Vec<String>,
     pub simplify: bool,
+    pub customization: Option<ExportCustomization>,
     pub pretty: bool,
     pub data_redaction: bool,
     pub conversation_order_ascending: bool,
@@ -94,13 +98,25 @@ impl<'a> ArchiveExportSource<'a> {
                         // The old group must exclude records moved to a new group.
                         unordered.insert(projected_conversation.to_owned());
                     }
+                    // Preserve legacy summary behavior, but customized summaries
+                    // must describe only the selected messages.
+                    if options.customization.is_none() {
+                        statistics.summary_media_count += message.media.len() as u64;
+                        all_conversations.insert(message.conversation_id.clone());
+                        if let Some(id) = &message.sender_id {
+                            sender_ids.insert(id.clone());
+                        }
+                    }
+                    if !includes_message(&message, options.simplify, options.customization.as_ref())
+                    {
+                        return Ok(());
+                    }
                     all_conversations.insert(message.conversation_id.clone());
                     if let Some(id) = &message.sender_id {
                         sender_ids.insert(id.clone());
                     }
-                    statistics.summary_media_count += message.media.len() as u64;
-                    if !included(&message, options.simplify) {
-                        return Ok(());
+                    if options.customization.is_some() {
+                        statistics.summary_media_count += message.media.len() as u64;
                     }
                     latest
                         .entry(message.conversation_id.clone())
@@ -126,7 +142,7 @@ impl<'a> ArchiveExportSource<'a> {
             if let Some(name) = store.conversation_display_name(&id)? {
                 conversation_names.insert(id.clone(), name);
             }
-            if options.simplify || options.pretty {
+            if options.simplify || options.pretty || options.customization.is_some() {
                 for participant in store.list_conversation_participants(&id)? {
                     directory.insert(participant.participant_id, participant.display_name);
                 }
@@ -172,14 +188,6 @@ impl<'a> ArchiveExportSource<'a> {
     }
 }
 
-fn included(message: &MessageV1, simplify: bool) -> bool {
-    !simplify
-        || !matches!(
-            message.raw_type.as_str(),
-            "group_announcement" | "group_board"
-        )
-}
-
 enum SourceError {
     Store(StoreError),
     Export(ExportError),
@@ -214,7 +222,11 @@ impl ExportSource for ArchiveExportSource<'_> {
         // announcements hidden by simplify. Keep at most two original records.
         let mut pending: Option<MessageV1> = None;
         let mut emit = |message: &MessageV1| {
-            if included(message, self.options.simplify) {
+            if includes_message(
+                message,
+                self.options.simplify,
+                self.options.customization.as_ref(),
+            ) {
                 visitor(message).map_err(SourceError::Export)
             } else {
                 Ok(())

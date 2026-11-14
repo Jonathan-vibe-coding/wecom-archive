@@ -1,6 +1,6 @@
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { createRun, DesktopRun, fail, localFetch, prepareMedia, repoRoot, runChild } from "./runtime.mjs";
+import { createRun, DesktopRun, diagnosticCode, fail, localFetch, prepareMedia, repoRoot, runChild } from "./runtime.mjs";
 import { archiveCases } from "./archive.mjs";
 import { settingsCases } from "./settings.mjs";
 import { timeoutCases } from "./import-timeouts.mjs";
@@ -22,13 +22,16 @@ try {
   await mkdir(join(root, "app"));
   await copyFile(join(repoRoot, "target/release/WeComArchive.exe"), executable);
   await prepareMedia(root);
+  stage = "start";
   let main = await desktop.start("main");
+  stage = "configure";
   const config = await desktop.api(main, "/api/v1/enterprise/config", {
     organizationName: "Synthetic acceptance", uploadUrl: main.origin,
     superAdminEnabled: true, dataRedaction: false, serverLogLevel: "off", collectorLogLevel: "off",
     collectorSchedule: { mode: "disabled", intervalMinutes: 60, dailyTime: "02:00" },
   }, "PUT");
   if (config.status !== 200) throw fail("SYNTHETIC_CONFIG_FAILED");
+  stage = "enroll";
   const collector = await desktop.api(main, "/api/v1/enterprise/collectors", {});
   if (collector.status !== 200 || !collector.value.executableGenerated) throw fail("SYNTHETIC_ENROLLMENT_FAILED");
   const binding = JSON.parse(collector.value.artifact);
@@ -36,6 +39,7 @@ try {
   await writeFile(join(root, "enrollment.json"), JSON.stringify({
     organizationId: binding.organizationId, keyId: binding.keyId, publicKeyHex: binding.publicKeyHex,
   }), { flag: "wx" });
+  stage = "fixtures";
   await runChild(join(repoRoot, "target/release/examples/acceptance-fixtures.exe"), [root]);
   stage = "seed";
   for (let index = 0; index < 10; index++) {
@@ -66,8 +70,10 @@ try {
   await timeoutCases({ root, desktop, main, fresh, check });
   stage = "recovery";
   await recoveryCases({ root, desktop, main, check });
-} catch {
-  console.error(`FAIL desktop-${stage}`);
+} catch (error) {
+  console.error(`FAIL desktop-${stage} ${diagnosticCode(error)}`);
+  try { console.error("DIAGNOSTIC desktop-startup", JSON.stringify(await desktop.diagnostics())); }
+  catch { console.error("DIAGNOSTIC desktop-startup DIAGNOSTIC_FAILED"); }
   process.exitCode = 1;
 } finally {
   try { await desktop.cleanup(); check("process-and-port-cleanup"); }

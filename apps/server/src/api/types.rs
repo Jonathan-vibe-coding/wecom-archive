@@ -1,7 +1,9 @@
 use crate::{ApiError, CollectionSchedule, default_collector_log_level, default_log_level};
 use archive_domain::MessageType;
+use archive_export::ExportCustomization;
 use archive_export::ExportFormat;
 use archive_export::ExportScope;
+use archive_export::ExportTimezone;
 use chrono::NaiveDate;
 use chrono::TimeDelta;
 use chrono::TimeZone;
@@ -467,6 +469,8 @@ pub(crate) struct ExportRequest {
     #[serde(default)]
     pub(crate) simplify: bool,
     #[serde(default)]
+    pub(crate) customization: Option<ExportCustomization>,
+    #[serde(default)]
     pub(crate) pretty: bool,
     #[serde(default)]
     pub(crate) conversation_order: ExportOrder,
@@ -477,6 +481,7 @@ pub(crate) struct ExportRequest {
 pub(crate) fn parse_export_date(
     value: Option<&str>,
     end_of_day: bool,
+    timezone: ExportTimezone,
 ) -> Result<Option<chrono::DateTime<Utc>>, ApiError> {
     let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) else {
         return Ok(None);
@@ -492,7 +497,14 @@ pub(crate) fn parse_export_date(
         date.and_hms_opt(0, 0, 0)
             .ok_or_else(ApiError::invalid_query)?
     };
-    Ok(Some(Utc.from_utc_datetime(&date_time)))
+    Ok(Some(
+        timezone
+            .offset()
+            .from_local_datetime(&date_time)
+            .single()
+            .ok_or_else(ApiError::invalid_query)?
+            .with_timezone(&Utc),
+    ))
 }
 
 #[derive(Debug, Deserialize)]
@@ -505,6 +517,8 @@ pub(crate) struct LocalExportRequest {
     pub(crate) data_redaction: bool,
     #[serde(default)]
     pub(crate) simplify: bool,
+    #[serde(default)]
+    pub(crate) customization: Option<ExportCustomization>,
     #[serde(default)]
     pub(crate) pretty: bool,
     #[serde(default)]

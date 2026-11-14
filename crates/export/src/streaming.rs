@@ -249,7 +249,7 @@ impl JsonStream {
             b"{"
         })?;
         let separator: &[u8] = if package.pretty { b": " } else { b":" };
-        if package.simplify {
+        if package.simplify && package.customization.is_none() {
             self.output.write_all(b"\"conversation\"")?;
             self.output.write_all(separator)?;
             serde_json::to_writer(&mut self.output, names.conversation_id(id))?;
@@ -289,7 +289,7 @@ impl JsonStream {
         if package.pretty {
             self.output.write_all(b"\n        ")?;
         }
-        if package.simplify {
+        if package.simplify && package.customization.is_none() {
             let value = SimplifiedMessage {
                 sender: names.sender(message),
                 content: message.body_text.as_deref(),
@@ -453,6 +453,52 @@ mod tests {
                         fs::remove_file(reference).unwrap();
                         fs::remove_file(stream).unwrap();
                     }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn customized_streams_match_filtered_in_memory_exports() {
+        let directory = tempfile::tempdir().unwrap();
+        for format in [
+            ExportFormat::Json,
+            ExportFormat::Csv,
+            ExportFormat::Html,
+            ExportFormat::Md,
+        ] {
+            for layout in [ExportLayout::Compact, ExportLayout::Standard] {
+                for types in [None, Some(vec![])] {
+                    let mut package = crate::tests::fixture(format, false, true);
+                    package.customization = Some(ExportCustomization {
+                        include_announcements: false,
+                        message_types: types,
+                        timezone: ExportTimezone::AsiaShanghai,
+                        layout,
+                        fields: ExportFields {
+                            lifecycle: false,
+                            direction: false,
+                            quote: false,
+                            ..ExportFields::default()
+                        },
+                        ..ExportCustomization::default()
+                    });
+                    let reference = directory.path().join("reference");
+                    let stream = directory.path().join("stream");
+                    let original =
+                        export_package(&package, &reference, &AtomicBool::new(false)).unwrap();
+                    let result = export_streamed(
+                        &package,
+                        &FixtureSource::new(&package),
+                        &stream,
+                        &AtomicBool::new(false),
+                    )
+                    .unwrap();
+                    assert_eq!(fs::read(&reference).unwrap(), fs::read(&stream).unwrap());
+                    assert_eq!(result.message_count, original.message_count);
+                    assert_eq!(result.media_count, original.media_count);
+                    fs::remove_file(reference).unwrap();
+                    fs::remove_file(stream).unwrap();
                 }
             }
         }

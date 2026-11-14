@@ -1,0 +1,134 @@
+name: Windows customizable export
+
+on:
+  push:
+    branches: [codex/customizable-export]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-custom-export-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-package:
+    runs-on: windows-2025
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      # Keep debug/test artifacts small on the hosted runner's limited disk.
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Use a stable temporary directory for Windows path tests
+        run: |
+          $testTemp = Join-Path $env:RUNNER_TEMP 'wecom-export-tests'
+          New-Item -ItemType Directory -Path $testTemp -Force | Out-Null
+          "TEMP=$testTemp" >> $env:GITHUB_ENV
+          "TMP=$testTemp" >> $env:GITHUB_ENV
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Install locked frontend dependencies
+        run: |
+          npm install --global pnpm@10.30.3
+          if ($LASTEXITCODE -ne 0) { throw 'pnpm installation failed.' }
+          pnpm install --frozen-lockfile
+          if ($LASTEXITCODE -ne 0) { throw 'Locked frontend dependency installation failed.' }
+
+      - name: Restore Rust build cache
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: windows-custom-export-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-${{ github.sha }}
+          restore-keys: windows-custom-export-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
+
+      - name: Upload cached binaries for local diagnostics
+        if: ${{ hashFiles('target/release/WeComArchive.exe') != '' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-cached-unverified-build
+          path: |
+            target/release/WeComArchive.exe
+            target/release/examples/acceptance-fixtures.exe
+          if-no-files-found: ignore
+          retention-days: 1
+
+      - name: Prepare the pinned Rust toolchain and offline dependencies
+        run: |
+          $toolchain = Get-Content -LiteralPath rust-toolchain.toml -Raw
+          $channel = [regex]::Match($toolchain, '(?m)^channel\s*=\s*"([^"]+)"').Groups[1].Value
+          if (-not $channel) { throw 'No pinned Rust channel found in rust-toolchain.toml.' }
+          rustup toolchain install $channel --profile minimal --component rustfmt --component clippy --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned Rust installation failed.' }
+          cargo fetch --locked
+          if ($LASTEXITCODE -ne 0) { throw 'Locked Rust dependency download failed.' }
+
+      - name: Check WebView2 for isolated desktop acceptance
+        run: |
+          $registryPaths = @(
+            'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}',
+            'HKCU:\Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+          )
+          $versions = @($registryPaths | ForEach-Object {
+            $version = (Get-ItemProperty -LiteralPath $_ -Name pv -ErrorAction SilentlyContinue).pv
+            if ($version -and $version -ne '0.0.0.0') { $version }
+          })
+          if ($versions.Count -eq 0) { throw 'The runner needs Microsoft Edge WebView2 Runtime for desktop acceptance.' }
+          Write-Host ('WebView2: ' + ($versions -join ', '))
+
+      - name: Check Rust formatting
+        run: |
+          cargo fmt --all -- --check
+          if ($LASTEXITCODE -ne 0) { throw 'Rust formatting check failed.' }
+
+      - name: Verify and package the Windows x64 application
+        id: build
+        run: |
+          $nodePath = (Get-Command node -CommandType Application | Select-Object -First 1).Source
+          $cargoPath = (Get-Command cargo -CommandType Application | Select-Object -First 1).Source
+          ./scripts/package-release.ps1 -PackageName ci-customizable-export-windows-x64 -Node $nodePath -Cargo $cargoPath
+
+      - name: Save Rust build cache
+        if: ${{ always() && steps.build.outcome != 'skipped' }}
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: windows-custom-export-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-${{ github.sha }}
+
+      - name: Upload the single executable
+        uses: actions/upload-artifact@v7
+        with:
+          path: artifacts/ci-customizable-export-windows-x64/WeComArchive.exe
+          archive: false
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload unverified binaries for isolated desktop diagnostics
+        if: ${{ failure() && steps.build.outcome == 'failure' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-unverified-build
+          path: |
+            target/release/WeComArchive.exe
+            target/release/examples/acceptance-fixtures.exe
+          if-no-files-found: ignore
+          retention-days: 3
