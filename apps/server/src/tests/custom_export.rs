@@ -1,4 +1,5 @@
 use super::*;
+use archive_domain::{MediaIntegrity, MediaRefV1};
 use archive_export::{ExportCustomization, ExportTimezone};
 
 fn fixture() -> ClientExportV1 {
@@ -155,7 +156,7 @@ async fn archive_filters_apply_to_markdown_and_importable_json_with_timezone_bou
             ),
             (1, 0, 0)
         );
-        let target = directory.0.join("exports").join(result.file_name);
+        let target = directory.0.join("exports").join(&result.file_name);
         if format == "json" {
             let export = read_json(&target).unwrap();
             assert_eq!(export.message_count, 1);
@@ -165,7 +166,8 @@ async fn archive_filters_apply_to_markdown_and_importable_json_with_timezone_bou
             );
         } else {
             let body = std::fs::read_to_string(target).unwrap();
-            assert!(body.contains("selected body") && body.contains("2026-01-02 00:00:00+08:00"));
+            assert!(body.contains("selected body"));
+            assert!(body.contains(r"2026\-01\-02 00:00:00\+08:00"));
             assert!(body.contains("测试成员"));
             assert!(!body.contains("excluded body") && !body.contains("excluded.txt"));
         }
