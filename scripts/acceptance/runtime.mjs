@@ -1,8 +1,9 @@
 import { spawn } from "node:child_process";
+import { constants as fsConstants } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import { createServer, createConnection } from "node:net";
 import { request as httpRequest } from "node:http";
-import { mkdir, readFile, writeFile, readdir, realpath, lstat } from "node:fs/promises";
+import { copyFile, mkdir, readFile, writeFile, readdir, realpath, lstat } from "node:fs/promises";
 import { resolve, dirname, join, relative, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -173,8 +174,39 @@ async function diagnosticProbe(port, path) {
   } catch (error) { return { status: null, code: diagnosticCode(error, "PROBE_UNAVAILABLE") }; }
 }
 
+export function hostedRunnerPolicyEnabled(env = process.env, platform = process.platform) {
+  return platform === "win32" && env.GITHUB_ACTIONS === "true" && env.RUNNER_ENVIRONMENT === "github-hosted" &&
+    env.RUNNER_OS === "Windows" && typeof env.GITHUB_WORKSPACE === "string" &&
+    resolve(env.GITHUB_WORKSPACE).toLowerCase() === resolve(repoRoot).toLowerCase();
+}
+
+function holdHostedWebviewPolicy(root, executable, profile, port) {
+  if (!hostedRunnerPolicyEnabled()) throw fail("HOSTED_WINDOWS_RUNNER_REQUIRED");
+  const helper = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-File", join(repoRoot, "scripts/acceptance/hold-webview-policy.ps1"),
+    "-RunRoot", root, "-Executable", executable, "-Profile", profile, "-DebugPort", String(port)],
+  { cwd: repoRoot, windowsHide: true, stdio: ["pipe", "pipe", "ignore"] });
+  helper.stdin.on("error", () => {});
+  const exited = new Promise(done => { helper.once("error", () => done(-1)); helper.once("exit", done); });
+  const ready = deadline(new Promise((done, reject) => {
+    let output = "";
+    helper.stdout.on("data", chunk => {
+      output = (output + chunk).slice(0, 32);
+      if (output.trim() === "ready") done();
+    });
+    helper.once("error", () => reject(fail("WEBVIEW_POLICY_PREPARE_FAILED")));
+    helper.once("exit", () => reject(fail("WEBVIEW_POLICY_PREPARE_FAILED")));
+  }), 10_000, "WEBVIEW_POLICY_PREPARE_TIMEOUT");
+  let ended = false;
+  return { ready, async release() {
+    if (!ended) { ended = true; helper.stdin.end("release\n"); }
+    // Do not kill the helper: its finally block owns restoring the exact values.
+    const code = await deadline(exited, 10_000, "WEBVIEW_POLICY_RESTORE_TIMEOUT");
+    if (code !== 0) throw fail("WEBVIEW_POLICY_RESTORE_FAILED");
+  } };
+}
+
 export class DesktopRun {
-  constructor(root, executable) { this.root = root; this.executable = executable; this.sessions = new Map(); this.ports = new Set(); this.cleanupFailures = []; }
+  constructor(root, executable) { this.root = root; this.executable = executable; this.sessions = new Map(); this.ports = new Set(); this.cleanupFailures = []; this.policyLeases = new Set(); }
   async port() {
     let port;
     do { port = await availablePort(); } while (this.ports.has(port));
@@ -186,11 +218,23 @@ export class DesktopRun {
     await validateRun(this.root);
     const port = await this.port(), debugPort = await this.port();
     const dataRoot = join(this.root, `${name}-data`);
-    const child = spawn(this.executable, [], {
-      cwd: dirname(this.executable), windowsHide: true, stdio: "ignore",
+    const profile = join(this.root, `webview-${name}-${debugPort}`);
+    let executable = this.executable;
+    let policy;
+    try {
+      if (hostedRunnerPolicyEnabled()) {
+        executable = join(this.root, "app", `WeComArchive.Acceptance.${randomUUID().replaceAll("-", "")}.${name}.exe`);
+        await copyFile(this.executable, executable, fsConstants.COPYFILE_EXCL);
+        await mkdir(profile, { recursive: true });
+        policy = holdHostedWebviewPolicy(this.root, executable, profile, debugPort);
+        this.policyLeases.add(policy);
+        await policy.ready;
+      }
+    const child = spawn(executable, [], {
+      cwd: dirname(executable), windowsHide: true, stdio: "ignore",
       env: { ...process.env, WECOM_ARCHIVE_SERVER_DATA: dataRoot, WECOM_ARCHIVE_SERVER_LISTEN: `127.0.0.1:${port}`,
         WECOM_ARCHIVE_SERVER_LOG: "off", WECOM_ARCHIVE_COLLECTOR_LOG: "off",
-        WEBVIEW2_USER_DATA_FOLDER: join(this.root, `webview-${name}-${debugPort}`),
+        WEBVIEW2_USER_DATA_FOLDER: profile,
         WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${debugPort} --remote-debugging-address=127.0.0.1 --disable-background-networking` },
     });
     const session = { name, child, dataRoot, port, debugPort, origin: `http://127.0.0.1:${port}`, stopped: false, startupStage: "health" };
@@ -206,6 +250,12 @@ export class DesktopRun {
     try { await c.wait("!!document.querySelector('.app-shell')", 30_000, "APP_SHELL_TIMEOUT"); } finally { c.close(); }
     session.startupStage = "ready";
     return session;
+    } finally {
+      if (policy) {
+        await policy.release();
+        this.policyLeases.delete(policy);
+      }
+    }
   }
   async diagnostics() {
     const reports = [];
@@ -274,6 +324,10 @@ export class DesktopRun {
     } finally { c.close(); }
   }
   async cleanup() {
+    for (const policy of this.policyLeases) {
+      try { await policy.release(); this.policyLeases.delete(policy); }
+      catch { this.cleanupFailures.push({ code: "WEBVIEW_POLICY_RESTORE_FAILED" }); }
+    }
     for (const session of this.sessions.values()) {
       if (!session.stopped) {
         try { await this.stop(session); }
