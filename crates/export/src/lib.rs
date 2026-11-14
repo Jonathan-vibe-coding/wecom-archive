@@ -11,6 +11,10 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 use uuid::Uuid;
 
+mod customization;
+pub use customization::{
+    ExportCustomization, ExportFields, ExportLayout, ExportTimezone, includes_message,
+};
 mod streaming;
 pub use streaming::{
     ExportSource, ExportStatistics, export_streamed, export_streamed_with_progress,
@@ -63,6 +67,7 @@ pub struct ExportPackage {
     pub conversation_names: BTreeMap<String, String>,
     pub simplify: bool,
     pub pretty: bool,
+    pub customization: Option<ExportCustomization>,
     pub media: Vec<ExportMedia>,
     pub generated_at: DateTime<Utc>,
     pub conversation_order_ascending: bool,
@@ -215,11 +220,7 @@ fn selected_messages(package: &ExportPackage) -> Vec<&MessageV1> {
 fn selected_conversations(package: &ExportPackage) -> Vec<SelectedConversation<'_>> {
     let mut grouped = BTreeMap::<&str, Vec<&MessageV1>>::new();
     for message in package.messages.iter().filter(|message| {
-        !package.simplify
-            || !matches!(
-                message.raw_type.as_str(),
-                "group_announcement" | "group_board"
-            )
+        includes_message(message, package.simplify, package.customization.as_ref())
     }) {
         grouped
             .entry(message.conversation_id.as_str())
@@ -431,6 +432,9 @@ fn csv_header(
     messages: &mut csv::Writer<File>,
     package: &ExportPackage,
 ) -> Result<(), ExportError> {
+    if let Some(options) = &package.customization {
+        return customization::csv_header(messages, package, options);
+    }
     let headers = [
         "stable_message_id",
         "conversation_id",
@@ -482,6 +486,9 @@ fn csv_message(
     names: &ExportNames<'_>,
     message: &MessageV1,
 ) -> Result<(), ExportError> {
+    if let Some(options) = &package.customization {
+        return customization::csv_message(messages, package, names, message, options);
+    }
     let media_names = message
         .media
         .iter()
@@ -528,6 +535,9 @@ fn html_header(
     message_count: u64,
     media_count: u64,
 ) -> Result<(), ExportError> {
+    if let Some(options) = &package.customization {
+        return customization::html_header(output, package, options, for_print, message_count);
+    }
     output.write_all(html_document_start("归档导出", for_print, package.pretty).as_bytes())?;
     let summary_details = if package.simplify {
         String::new()
@@ -551,6 +561,9 @@ fn html_conversation(
     names: &ExportNames<'_>,
     conversation_id: &str,
 ) -> Result<(), ExportError> {
+    if let Some(options) = &package.customization {
+        return customization::html_conversation(output, names, conversation_id, options);
+    }
     let conversation_title = if package.simplify {
         names.conversation_id(conversation_id).to_owned()
     } else if package.pretty {
@@ -574,6 +587,9 @@ fn html_message(
     names: &ExportNames<'_>,
     message: &MessageV1,
 ) -> Result<(), ExportError> {
+    if let Some(options) = &package.customization {
+        return customization::html_message(output, package, names, message, options);
+    }
     let sender = if package.simplify {
         html_escape(names.sender(message))
     } else if package.pretty {
@@ -611,6 +627,9 @@ fn markdown_header(
     package: &ExportPackage,
     message_count: u64,
 ) -> Result<(), ExportError> {
+    if let Some(options) = &package.customization {
+        return customization::markdown_header(output, options, message_count);
+    }
     writeln!(output, "# {}\n", markdown_escape("归档导出"))?;
     writeln!(
         output,
@@ -626,6 +645,9 @@ fn markdown_conversation(
     names: &ExportNames<'_>,
     conversation_id: &str,
 ) -> Result<(), ExportError> {
+    if let Some(options) = &package.customization {
+        return customization::markdown_conversation(output, names, conversation_id, options);
+    }
     let conversation_title = if package.simplify {
         names.conversation_id(conversation_id).to_owned()
     } else if package.pretty {
@@ -645,6 +667,9 @@ fn markdown_message(
     names: &ExportNames<'_>,
     message: &MessageV1,
 ) -> Result<(), ExportError> {
+    if let Some(options) = &package.customization {
+        return customization::markdown_message(output, package, names, message, options);
+    }
     let sender = if package.simplify {
         names.sender(message).to_owned()
     } else if package.pretty {
@@ -859,6 +884,7 @@ mod tests {
             )]),
             simplify,
             pretty,
+            customization: None,
             media: vec![],
             generated_at: sent_at,
             conversation_order_ascending: true,

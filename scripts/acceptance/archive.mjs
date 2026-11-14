@@ -12,7 +12,10 @@ async function bootstrap(session) {
         if (u.pathname.startsWith('/api/v1/media/')) s.mediaRequests.push(u.pathname);
         const r = await s.nativeFetch(input, init);
         if (u.pathname.endsWith('/position')) s.positions.push({ sort: u.searchParams.get('sort'), status: r.status });
-        if (u.pathname === '/api/v1/exports/start' && r.ok) s.lastExport = await r.clone().json();
+        if (u.pathname === '/api/v1/exports/start' && r.ok) {
+          s.lastExport = await r.clone().json();
+          s.lastExportRequest = JSON.parse(init.body);
+        }
         if (u.pathname === '/api/v1/imports/json') s.lastImport = { status: r.status, value: await r.clone().json() };
         return r;
       };
@@ -184,6 +187,8 @@ export async function archiveCases({ desktop, main, fresh, check }) {
     await c.evaluate(`(() => {
       const s = window.__acceptance, card = document.querySelector('.export-dialog-card');
       [...card.querySelectorAll('label')].find(e => e.textContent.trim() === '全部档案').querySelector('input').click();
+      [...card.querySelectorAll('.export-preset-grid button')].find(e => e.querySelector('strong').textContent === '完整归档').click();
+      s.click('JSON');
       for (const l of card.querySelectorAll('.export-presentation-options label')) {
         const e = l.querySelector('input'), desired = l.textContent.trim() === '美化信息';
         if (e.checked !== desired) e.click();
@@ -209,6 +214,34 @@ export async function archiveCases({ desktop, main, fresh, check }) {
     check("fresh-archive-roundtrip", loaded.status === 200 && loaded.inserted === 6209);
     const repeated = await importUi(freshC, file);
     check("repeat-import", repeated.status === 200 && repeated.inserted === 0 && repeated.unchanged === 6209 && repeated.revised === 0);
+    await c.evaluate("window.__acceptance.lastExport = null; window.__acceptance.click('导出')");
+    await c.wait("!!document.querySelector('.export-dialog-card')");
+    await c.evaluate(`(() => {
+      const s = window.__acceptance, card = document.querySelector('.export-dialog-card');
+      [...card.querySelectorAll('.export-preset-grid button')].find(e => e.querySelector('strong').textContent === 'AI 精简').click();
+      s.click('MD');
+    })()`);
+    await c.evaluate(`(() => {
+      const s = window.__acceptance, card = document.querySelector('.export-dialog-card');
+      [...card.querySelectorAll('.export-content-fields label')].find(e => e.textContent.trim() === '时间').querySelector('input').click();
+      [...card.querySelectorAll('.export-content-filters label')].find(e => e.textContent.trim() === '群公告').querySelector('input').click();
+      s.set(card.querySelector('[aria-label="显示时区"]'), 'utc');
+    })()`);
+    const customUi = await c.evaluate("document.querySelector('.export-preset-grid button[aria-pressed=\"true\"] strong').textContent === '自定义' && !!document.querySelector('.export-preview pre')");
+    await c.evaluate("window.__acceptance.click('开始导出')");
+    await c.wait("!!window.__acceptance.lastExport");
+    const customTask = await c.evaluate("window.__acceptance.lastExport.taskId");
+    const customized = await task(customTask), customPath = exportPath(customized);
+    await c.wait("!document.querySelector('.export-dialog-card')");
+    const customRequest = await c.evaluate("window.__acceptance.lastExportRequest");
+    const markdown = await readFile(customPath, "utf8");
+    check("customized-markdown-ui", customUi && customPath.endsWith(".md") && markdown.startsWith("# 归档导出") &&
+      customRequest.format === "md" && customRequest.simplify === false &&
+      customRequest.customization.layout === "compact" && customRequest.customization.timezone === "utc" &&
+      customRequest.customization.fields.timestamp === false && customRequest.customization.fields.lifecycle === false &&
+      customRequest.customization.fields.conversation === true && customRequest.customization.includeAnnouncements === true &&
+      customRequest.customization.includeSystemMessages === false &&
+      !markdown.includes("2026-01-02 00:") && !markdown.includes("状态：active") && !markdown.includes("方向：incoming") && markdown.includes("## "));
     for (const [scope, extra, count] of [
       ["current_conversation", { conversationId: "R:acceptance-000" }, 6009],
       ["current_filter", { conversationId: "R:acceptance-000", text: "shared-match", participantId: "acceptance-b", messageType: "file", mediaOnly: true }, 1],

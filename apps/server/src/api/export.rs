@@ -112,8 +112,9 @@ async fn execute_archive_export(
         }
         ExportScope::DateRange | ExportScope::EntireArchive => Vec::new(),
     };
-    let starts_at = parse_export_date(request.start_date.as_deref(), false)?;
-    let ends_at = parse_export_date(request.end_date.as_deref(), true)?;
+    let timezone = request.customization.as_ref().map(|options| options.timezone).unwrap_or_default();
+    let starts_at = parse_export_date(request.start_date.as_deref(), false, timezone)?;
+    let ends_at = parse_export_date(request.end_date.as_deref(), true, timezone)?;
     if request.scope == ExportScope::DateRange && starts_at.is_none() && ends_at.is_none() {
         return Err(ApiError::invalid_query());
     }
@@ -171,6 +172,7 @@ async fn execute_archive_export(
                 query: base_query,
                 conversation_ids,
                 simplify: request.simplify,
+                customization: request.customization.clone(),
                 pretty: request.pretty,
                 data_redaction: request.data_redaction,
                 conversation_order_ascending: request.conversation_order.is_ascending(),
@@ -195,6 +197,7 @@ async fn execute_archive_export(
             participants: source.participants().to_vec(),
             conversation_names: source.conversation_names().clone(),
             simplify: request.simplify,
+            customization: request.customization.clone(),
             pretty: request.pretty,
             media: Vec::new(),
             generated_at: Utc::now(),
@@ -223,7 +226,7 @@ async fn execute_archive_export(
                 progress.total_messages = Some(total);
             }
         };
-        let result = if matches!(format, ExportFormat::Json) && !request.simplify {
+        let result = if matches!(format, ExportFormat::Json) && (!request.simplify || request.customization.is_some()) {
             crate::service::export_importable_json(
                 &store,
                 &source,
@@ -456,6 +459,7 @@ async fn create_local_export_work(
         let result = tokio::task::spawn_blocking(move || {
             let _permit = permit;
             let _data_lock = data_lock;
+            filter_local_export(&mut export, request.customization.as_ref())?;
             let export_id = export.export_id;
             let export_root = data_root.join("exports");
             std::fs::create_dir_all(&export_root).map_err(|_| ApiError::store())?;
@@ -467,7 +471,7 @@ async fn create_local_export_work(
             };
             let (file_name, target) =
                 next_export_file(&export_root, extension, &AtomicBool::new(false))?;
-            if format == ExportFormat::Json && !request.simplify {
+            if format == ExportFormat::Json && (!request.simplify || request.customization.is_some()) {
                 sort_export_for_output(
                     &mut export,
                     conversation_order_ascending,
@@ -531,6 +535,7 @@ async fn create_local_export_work(
                 participants,
                 conversation_names,
                 simplify: request.simplify,
+                customization: request.customization.clone(),
                 pretty: request.pretty,
                 media,
                 generated_at: Utc::now(),
@@ -558,6 +563,38 @@ async fn create_local_export_work(
         missing_media_count: result.1.missing_media_count,
         manifest_sha256: result.1.manifest_sha256,
     }))
+}
+
+/// Apply the same selection to direct local JSON and reading-format exports.
+/// Rebuild counts and the versioned checksum instead of projecting JSON fields.
+pub(crate) fn filter_local_export(
+    export: &mut archive_domain::ClientExportV1,
+    customization: Option<&archive_export::ExportCustomization>,
+) -> Result<(), ApiError> {
+    let Some(customization) = customization else { return Ok(()); };
+    for batch in &mut export.batches {
+        batch.messages.retain(|message| archive_export::includes_message(message, false, Some(customization)));
+    }
+    export.batches.retain(|batch| !batch.messages.is_empty());
+    let messages = export.batches.iter().flat_map(|batch| &batch.messages);
+    let conversation_ids: std::collections::BTreeSet<_> = messages.clone().map(|message| message.conversation_id.clone()).collect();
+    let media_hashes: std::collections::BTreeSet<_> = messages.flat_map(|message| &message.media).filter_map(|media| media.content_hash.clone()).collect();
+    export.conversations.retain(|conversation| conversation_ids.contains(&conversation.conversation_id));
+    let participant_ids: std::collections::BTreeSet<_> = export.conversations.iter().flat_map(|conversation| &conversation.participant_ids).cloned()
+        .chain(export.batches.iter().flat_map(|batch| &batch.messages).filter_map(|message| message.sender_id.clone())).collect();
+    export.participants.retain(|participant| participant_ids.contains(&participant.participant_id));
+    export.media_blobs.retain(|blob| media_hashes.contains(&blob.content_hash));
+    let mut filtered = archive_transfer::create_export_with_media(
+        &export.client_version,
+        std::mem::take(&mut export.batches),
+        std::mem::take(&mut export.conversations),
+        std::mem::take(&mut export.participants),
+        std::mem::take(&mut export.media_blobs),
+    ).map_err(|_| ApiError::invalid_export())?;
+    filtered.export_id = export.export_id;
+    filtered.generated_at = export.generated_at;
+    *export = filtered;
+    Ok(())
 }
 
 pub(crate) async fn open_export_directory(

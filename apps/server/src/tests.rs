@@ -20,6 +20,7 @@ use super::*;
 
 mod archive_operations;
 mod collector_uploads;
+mod custom_export;
 mod export_queue;
 mod export_retention;
 mod long_tasks;
@@ -881,6 +882,7 @@ async fn super_admin_defaults_to_enabled_and_can_be_disabled_for_server_export()
             media_only: None,
             data_redaction: false,
             simplify: false,
+            customization: None,
             pretty: false,
             conversation_order: ExportOrder::Descending,
             message_order: ExportOrder::Descending,
@@ -1932,6 +1934,7 @@ async fn creates_authenticated_server_export_file() {
             media_only: None,
             data_redaction: false,
             simplify: false,
+            customization: None,
             pretty: false,
             conversation_order: ExportOrder::Descending,
             message_order: ExportOrder::Descending,
@@ -2560,6 +2563,7 @@ fn archive_streaming_preserves_filtered_formats_orders_redaction_and_snapshot() 
                                 query: query.clone(),
                                 conversation_ids: vec!["a".into(), "b".into(), "a".into()],
                                 simplify,
+                                customization: None,
                                 pretty,
                                 data_redaction: true,
                                 conversation_order_ascending: conversation_ascending,
@@ -2606,6 +2610,7 @@ fn archive_streaming_preserves_filtered_formats_orders_redaction_and_snapshot() 
                             media,
                             conversation_names: names.clone(),
                             simplify,
+                            customization: None,
                             pretty,
                             generated_at: template.sent_at,
                             conversation_order_ascending: conversation_ascending,

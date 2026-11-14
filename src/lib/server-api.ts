@@ -1,3 +1,4 @@
+import type { ExportCustomization } from "../domain/export-options";
 import type { ExportScope, MessageDirection, MessageType, ParticipantProfile } from "../domain/types";
 import { resumeArchiveTask, trackArchiveRequest, type ArchiveTaskKind, type ArchiveTaskProgress } from "./long-task";
 
@@ -291,6 +292,7 @@ export interface ServerExportRequest {
   pretty?: boolean;
   conversationOrder?: ExportOrder;
   messageOrder?: ExportOrder;
+  customization?: ExportCustomization;
 }
 
 export type ExportOrder = "ascending" | "descending";
@@ -326,6 +328,7 @@ export interface LocalExportRequest {
   pretty?: boolean;
   conversationOrder?: ExportOrder;
   messageOrder?: ExportOrder;
+  customization?: ExportCustomization;
 }
 
 interface ServerError {

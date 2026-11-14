@@ -3,6 +3,7 @@ import { StrictMode } from "react";
 import { afterEach, vi } from "vitest";
 import App from "../App";
 import * as serverApi from "../lib/server-api";
+import { EXPORT_SETTINGS_KEY, exportPreset } from "../domain/export-options";
 import { ArchiveTaskPendingError, type ArchiveTaskKind, type ArchiveTaskProgress } from "../lib/long-task";
 
 const accessToken = "0123456789abcdefghijklmnop";
@@ -116,6 +117,7 @@ async function connect(expectedTitle = "真实 API 会话") {
 }
 
 afterEach(() => {
+  localStorage.removeItem(EXPORT_SETTINGS_KEY);
   if (originalScrollIntoView) Object.defineProperty(HTMLElement.prototype, "scrollIntoView", originalScrollIntoView);
   else Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
   window.history.replaceState(null, "", "/");
@@ -377,12 +379,12 @@ describe("archive workspace", () => {
     releaseRequests();
     expect(await screen.findByRole("heading", { name: "快速导出本机记录", level: 2 })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "本机" })).toHaveClass("active");
-    for (const name of ["数据脱敏", "简化信息", "美化信息"]) expect(screen.getByRole("checkbox", { name })).toBeChecked();
+    for (const name of ["数据脱敏", "美化信息"]) expect(screen.getByRole("checkbox", { name })).toBeChecked();
     expect(screen.queryByText("正在启动归档工作台")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("服务端访问令牌")).not.toBeInTheDocument();
     expect(window.location.hash).toBe("");
     expect(window.location.search).toBe("?view=archive");
-    expect(storageSpy).not.toHaveBeenCalled();
+    expect(storageSpy.mock.calls.every(([key, value]) => key === EXPORT_SETTINGS_KEY && !String(value).includes(accessToken))).toBe(true);
   });
 
   it("returns to manual connection after automatic authentication fails and allows retry", async () => {
@@ -416,7 +418,7 @@ describe("archive workspace", () => {
     await connect();
     expect(await screen.findByText("来自服务端归档的数据")).toBeInTheDocument();
     expect(screen.getAllByText(/已归档 1 条消息/).length).toBeGreaterThan(0);
-    expect(storageSpy).not.toHaveBeenCalled();
+    expect(storageSpy.mock.calls.every(([key, value]) => key === EXPORT_SETTINGS_KEY && !String(value).includes(accessToken))).toBe(true);
   });
 
   it.each(["document", "group"])("labels M conversations correctly when the stored type is %s", async (storedType) => {
@@ -703,15 +705,13 @@ describe("archive workspace", () => {
     expect(screen.queryByRole("button", { name: "PDF" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "CSV" }));
     const redaction = screen.getByRole("checkbox", { name: "数据脱敏" });
-    const simplify = screen.getByRole("checkbox", { name: "简化信息" });
     const pretty = screen.getByRole("checkbox", { name: "美化信息" });
     expect(redaction).toBeChecked();
-    expect(simplify).toBeChecked();
+    expect(screen.queryByRole("checkbox", { name: "简化信息" })).not.toBeInTheDocument();
     expect(pretty).toBeChecked();
     expect(redaction.closest("label")?.getAttribute("title")).toContain("疑似凭据片段");
-    expect(simplify.closest("label")?.getAttribute("title")).toContain("去掉系统 ID");
     expect(pretty.closest("label")?.getAttribute("title")).toContain("易读排版");
-    expect(redaction.closest(".export-presentation-options")?.querySelectorAll("label")).toHaveLength(3);
+    expect(redaction.closest(".export-presentation-options")?.querySelectorAll("label")).toHaveLength(2);
     const configRow = redaction.closest(".local-export-config-row");
     expect(configRow).not.toBeNull();
     expect(configRow).toContainElement(screen.getByRole("combobox", { name: "会话时间排序" }));
@@ -724,25 +724,25 @@ describe("archive workspace", () => {
     expect(await screen.findByText(/本机导出完成：local-export.csv/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "打开导出目录" })).toBeInTheDocument();
     const exportCall = vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith("/exports/local"));
-    expect(JSON.parse(String(exportCall?.[1]?.body))).toEqual({ format: "csv", dataRedaction: true, simplify: true, pretty: true, conversationOrder: "descending", messageOrder: "descending" });
+    expect(JSON.parse(String(exportCall?.[1]?.body))).toEqual({ format: "csv", dataRedaction: true, simplify: false, pretty: true, conversationOrder: "descending", messageOrder: "descending", customization: exportPreset("ai") });
   });
 
-  it.each([[false, false], [true, false], [false, true], [true, true]])("sends independent server export options simplify=%s pretty=%s", async (simplify, pretty) => {
+  it.each([false, true])("sends customized server export options with pretty=%s", async (pretty) => {
     installApiMock();
     render(<App />);
     await connect();
     fireEvent.click(screen.getByRole("button", { name: "导出" }));
     expect(screen.getByRole("button", { name: "MD" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "PDF" })).not.toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: "简化信息" })).toBeChecked();
+    expect(screen.queryByRole("checkbox", { name: "简化信息" })).not.toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "美化信息" })).toBeChecked();
-    if (!simplify) fireEvent.click(screen.getByRole("checkbox", { name: "简化信息" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "其他系统消息" }));
     if (!pretty) fireEvent.click(screen.getByRole("checkbox", { name: "美化信息" }));
     fireEvent.click(screen.getByRole("button", { name: "开始导出" }));
     await waitFor(() => {
       const exportCall = vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith("/exports"));
       expect(exportCall).toBeDefined();
-      expect(JSON.parse(String(exportCall?.[1]?.body))).toMatchObject({ simplify, pretty, dataRedaction: true });
+      expect(JSON.parse(String(exportCall?.[1]?.body))).toMatchObject({ simplify: false, pretty, dataRedaction: true, customization: { ...exportPreset("ai"), includeSystemMessages: true } });
       expect(JSON.parse(String(exportCall?.[1]?.body))).toMatchObject({ conversationOrder: "descending", messageOrder: "descending" });
     });
   });
@@ -757,6 +757,29 @@ describe("archive workspace", () => {
     await waitFor(() => {
       const exportCall = vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith("/exports"));
       expect(JSON.parse(String(exportCall?.[1]?.body))).toMatchObject({ conversationOrder: "descending", messageOrder: "ascending" });
+    });
+  });
+
+  it("shares custom content settings between local and conversation exports and blocks an empty type selection", async () => {
+    installApiMock();
+    render(<App />);
+    await connect();
+    fireEvent.click(screen.getByRole("button", { name: "本机" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "群公告" }));
+    fireEvent.click(screen.getByText(/按消息类型筛选/));
+    fireEvent.click(screen.getByRole("button", { name: "清空类型" }));
+    expect(screen.getByRole("button", { name: "开始导出" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("checkbox", { name: "文本" }));
+    expect(screen.getByRole("button", { name: "开始导出" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "会话" }));
+    fireEvent.click(screen.getByRole("button", { name: "导出" }));
+    expect(screen.getByRole("checkbox", { name: "群公告" })).toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: "JSON" }));
+    expect(screen.getByRole("checkbox", { name: "正文" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "开始导出" }));
+    await waitFor(() => {
+      const exportCall = vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith("/exports"));
+      expect(JSON.parse(String(exportCall?.[1]?.body))).toMatchObject({ format: "json", simplify: false, customization: { includeAnnouncements: true, messageTypes: ["text"] } });
     });
   });
 

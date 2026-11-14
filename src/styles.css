@@ -400,10 +400,33 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .export-data-redaction-option { min-height: 38px; padding: 0 4px; display: inline-flex; align-items: center; gap: 7px; color: #273850; font-size: 12px; font-weight: 650; cursor: pointer; }
 .export-data-redaction-option input { width: 15px; height: 15px; margin: 0; accent-color: var(--blue); }
 .export-presentation-options { display: flex; align-items: center; gap: 24px; min-width: 0; white-space: nowrap; }
+.export-content-options { display: grid; gap: 14px; min-width: 0; text-align: left; }
+.export-content-heading { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; }
+.export-content-heading small, .export-option-hint { display: block; color: #748095; font-size: 11px; line-height: 1.65; }
+.export-preset-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.export-preset-grid button { display: grid; gap: 5px; padding: 12px; border: 1px solid #dde4ef; border-radius: 8px; background: #fff; text-align: left; color: #40516a; }
+.export-preset-grid button strong { font-size: 12px; }.export-preset-grid button small { font-size: 10px; line-height: 1.5; color: #748095; }
+.export-preset-grid button.selected { border-color: var(--blue); background: var(--blue-soft); color: var(--blue); }
+.local-export-options .export-content-options fieldset, .export-dialog-options .export-content-options fieldset { min-width: 0; margin: 0; padding: 12px 14px; border: 1px solid #e4e9f1; border-radius: 8px; background: #fafbfd; }
+.export-content-options fieldset:disabled { opacity: .55; }
+.export-content-options legend { padding: 0 5px; font-size: 12px; color: #52627a; }
+.export-checkbox-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 12px; margin: 2px 0 9px; }
+.export-content-filters > .export-checkbox-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.export-checkbox-grid label { display: flex; align-items: center; gap: 7px; color: #40516a; font-size: 12px; min-width: 0; }
+.export-checkbox-grid input { margin: 0; accent-color: var(--blue); }
+.export-type-picker { margin-top: 10px; padding-top: 10px; border-top: 1px solid #e5eaf2; }
+.export-type-picker summary, .export-preview summary { font-size: 11px; color: #596e89; cursor: pointer; }
+.export-type-actions { display: flex; gap: 14px; margin: 10px 0; }.export-type-actions button { border: 0; padding: 0; color: var(--blue); background: none; font-size: 11px; }
+.export-content-options .export-options-note, .export-content-options .export-options-warning { margin: 0; padding: 10px 12px; border-radius: 6px; background: #edf4ff; color: #42638c; font-size: 11px; line-height: 1.65; }
+.export-content-options .export-options-warning { margin-top: 8px; background: #fff4df; color: #936317; }
+.export-display-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 14px 0 2px; }
+.export-display-options label { display: grid; gap: 6px; color: #68788f; font-size: 11px; }.export-display-options select { min-width: 0; height: 32px; padding: 0 8px; border: 1px solid #dce3ee; border-radius: 5px; color: #40516a; background: #fff; font: inherit; }
+.export-preview pre { margin: 9px 0; padding: 12px; background: #f2f5f9; border: 1px solid #e4e9f1; border-radius: 6px; color: #40516a; font: 11px/1.75 ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 640px) { .export-checkbox-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }.export-preset-grid button { padding: 9px; }.export-preset-grid button small { display: none; } }
 .export-directory-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 7px 10px; border: 1px solid #cbd6e5; border-radius: 5px; background: #f8faff; color: #24518a; font-size: 12px; white-space: nowrap; cursor: pointer; }
 .export-directory-button:disabled { opacity: .6; cursor: wait; }
 .local-export-card-heading .export-directory-button { margin-left: auto; }
-.export-dialog-card { width: min(760px, calc(100vw - 40px)); max-height: calc(100dvh - 64px); padding: 32px 36px; overflow-y: auto; }
+.modal-card.export-dialog-card { width: min(760px, calc(100vw - 40px)); max-height: calc(100dvh - 64px); padding: 32px 36px; overflow-y: auto; }
 .export-dialog-corner-actions { position: absolute; top: 13px; right: 13px; display: flex; align-items: center; gap: 6px; }
 .export-dialog-corner-actions .modal-close { position: static; flex: none; }
 .export-dialog-options { margin-top: 22px; display: grid; gap: 14px; }
