@@ -447,14 +447,14 @@ pub(super) fn markdown_message(
             writeln!(output, "### {}\n", metadata.join(" · "))?;
         }
     }
-    if options.fields.body {
-        if let Some(body) = &message.body_text {
-            // Fencing preserves text (including code and Markdown) exactly and
-            // prevents source messages becoming executable/remote markup.
-            let longest = body.split(|c| c != '`').map(str::len).max().unwrap_or(0);
-            let fence = "`".repeat(3.max(longest + 1));
-            writeln!(output, "{fence}text\n{body}\n{fence}\n")?;
-        }
+    if options.fields.body
+        && let Some(body) = &message.body_text
+    {
+        // Fencing preserves text (including code and Markdown) exactly and
+        // prevents source messages becoming executable/remote markup.
+        let longest = body.split(|c| c != '`').map(str::len).max().unwrap_or(0);
+        let fence = "`".repeat(3.max(longest + 1));
+        writeln!(output, "{fence}text\n{body}\n{fence}\n")?;
     }
     if options.fields.media && !message.media.is_empty() {
         writeln!(

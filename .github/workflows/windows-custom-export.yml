@@ -28,6 +28,13 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v7
 
+      - name: Use a stable temporary directory for Windows path tests
+        run: |
+          $testTemp = Join-Path $env:RUNNER_TEMP 'wecom-export-tests'
+          New-Item -ItemType Directory -Path $testTemp -Force | Out-Null
+          "TEMP=$testTemp" >> $env:GITHUB_ENV
+          "TMP=$testTemp" >> $env:GITHUB_ENV
+
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
