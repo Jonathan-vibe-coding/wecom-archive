@@ -133,7 +133,7 @@ async fn archive_filters_apply_to_markdown_and_importable_json_with_timezone_bou
     let directory = TestDirectory::new();
     let app_state = state(&directory);
     enable_super_admin(&app_state);
-    ingest_export(&app_state, fixture()).await.unwrap();
+    let _ = ingest_export(&app_state, fixture()).await.unwrap();
     for format in ["md", "json"] {
         let request = serde_json::from_value(json!({
             "scope": "date_range", "format": format,
