@@ -1,9 +1,9 @@
 use crate::{ApiError, CollectionSchedule, default_collector_log_level, default_log_level};
 use archive_domain::MessageType;
-use archive_export::ExportFormat;
 use archive_export::ExportCustomization;
-use archive_export::ExportTimezone;
+use archive_export::ExportFormat;
 use archive_export::ExportScope;
+use archive_export::ExportTimezone;
 use chrono::NaiveDate;
 use chrono::TimeDelta;
 use chrono::TimeZone;
@@ -497,8 +497,14 @@ pub(crate) fn parse_export_date(
         date.and_hms_opt(0, 0, 0)
             .ok_or_else(ApiError::invalid_query)?
     };
-    Ok(Some(timezone.offset().from_local_datetime(&date_time)
-        .single().ok_or_else(ApiError::invalid_query)?.with_timezone(&Utc)))
+    Ok(Some(
+        timezone
+            .offset()
+            .from_local_datetime(&date_time)
+            .single()
+            .ok_or_else(ApiError::invalid_query)?
+            .with_timezone(&Utc),
+    ))
 }
 
 #[derive(Debug, Deserialize)]

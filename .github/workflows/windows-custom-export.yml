@@ -41,6 +41,16 @@ jobs:
           pnpm install --frozen-lockfile
           if ($LASTEXITCODE -ne 0) { throw 'Locked frontend dependency installation failed.' }
 
+      - name: Restore Rust build cache
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: windows-custom-export-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-${{ github.sha }}
+          restore-keys: windows-custom-export-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
+
       - name: Prepare the pinned Rust toolchain and offline dependencies
         run: |
           $toolchain = Get-Content -LiteralPath rust-toolchain.toml -Raw
@@ -64,33 +74,27 @@ jobs:
           if ($versions.Count -eq 0) { throw 'The runner needs Microsoft Edge WebView2 Runtime for desktop acceptance.' }
           Write-Host ('WebView2: ' + ($versions -join ', '))
 
-      # Bootstrap only: import the resulting patch into the source branch, then
-      # replace this step with cargo fmt --all -- --check for final validation.
-      - name: Prepare rustfmt patch for initial Windows validation
-        id: format
+      - name: Check Rust formatting
         run: |
-          cargo fmt --all
-          if ($LASTEXITCODE -ne 0) { throw 'Rust formatting failed.' }
-          New-Item -ItemType Directory -Path target -Force | Out-Null
-          git diff --binary --output=target/ci-rustfmt.patch -- '*.rs'
-          if ($LASTEXITCODE -ne 0) { throw 'Could not create the Rust formatting patch.' }
-          if ((Get-Item -LiteralPath target/ci-rustfmt.patch).Length -gt 0) {
-            'changed=true' >> $env:GITHUB_OUTPUT
-            Write-Warning 'Rust formatting was applied in CI. Import ci-rustfmt.patch and rerun with strict format checking before final delivery.'
-            'Rust formatting changed: import the ci-rustfmt.patch artifact, commit it, and rerun strict format validation before final delivery.' >> $env:GITHUB_STEP_SUMMARY
-          }
-
-      - name: Upload formatting patch
-        if: ${{ always() && steps.format.outputs.changed == 'true' }}
-        uses: actions/upload-artifact@v7
-        with:
-          path: target/ci-rustfmt.patch
-          archive: false
-          if-no-files-found: error
-          retention-days: 7
+          cargo fmt --all -- --check
+          if ($LASTEXITCODE -ne 0) { throw 'Rust formatting check failed.' }
 
       - name: Verify and package the Windows x64 application
-        run: ./scripts/package-release.ps1 -PackageName ci-customizable-export-windows-x64
+        id: build
+        run: |
+          $nodePath = (Get-Command node -CommandType Application | Select-Object -First 1).Source
+          $cargoPath = (Get-Command cargo -CommandType Application | Select-Object -First 1).Source
+          ./scripts/package-release.ps1 -PackageName ci-customizable-export-windows-x64 -Node $nodePath -Cargo $cargoPath
+
+      - name: Save Rust build cache
+        if: ${{ always() && steps.build.outcome != 'skipped' }}
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: windows-custom-export-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-${{ github.sha }}
 
       - name: Upload the single executable
         uses: actions/upload-artifact@v7

@@ -36,7 +36,10 @@ impl ExportTimezone {
     }
 
     fn format(&self, value: &DateTime<Utc>) -> String {
-        value.with_timezone(&self.offset()).format("%Y-%m-%d %H:%M:%S%:z").to_string()
+        value
+            .with_timezone(&self.offset())
+            .format("%Y-%m-%d %H:%M:%S%:z")
+            .to_string()
     }
 }
 
@@ -58,8 +61,15 @@ pub struct ExportFields {
 impl Default for ExportFields {
     fn default() -> Self {
         Self {
-            conversation: true, sender: true, timestamp: true, message_type: true,
-            lifecycle: true, direction: true, body: true, media: true, quote: true,
+            conversation: true,
+            sender: true,
+            timestamp: true,
+            message_type: true,
+            lifecycle: true,
+            direction: true,
+            body: true,
+            media: true,
+            quote: true,
             technical_ids: false,
         }
     }
@@ -83,10 +93,14 @@ pub struct ExportCustomization {
 impl Default for ExportCustomization {
     fn default() -> Self {
         Self {
-            fields: ExportFields::default(), include_system_messages: true,
-            include_recalled_messages: true, include_deleted_messages: true,
-            include_announcements: true, message_types: None,
-            layout: ExportLayout::Standard, timezone: ExportTimezone::Utc,
+            fields: ExportFields::default(),
+            include_system_messages: true,
+            include_recalled_messages: true,
+            include_deleted_messages: true,
+            include_announcements: true,
+            message_types: None,
+            layout: ExportLayout::Standard,
+            timezone: ExportTimezone::Utc,
         }
     }
 }
@@ -99,49 +113,95 @@ pub fn includes_message(
     simplify: bool,
     customization: Option<&ExportCustomization>,
 ) -> bool {
-    let announcement = matches!(message.raw_type.as_str(), "group_announcement" | "group_board");
-    let Some(options) = customization else { return !simplify || !announcement; };
-    if options.message_types.as_ref().is_some_and(|types| !types.contains(&message.message_type)) {
-        return false;
-    }
-    let recalled = message.lifecycle == LifecycleState::Recalled || message.raw_type.trim() == "2063";
-    if (!options.include_announcements && announcement)
-        || (!options.include_recalled_messages && recalled)
-        || (!options.include_deleted_messages && message.lifecycle == LifecycleState::DeletedAtSource)
+    let announcement = matches!(
+        message.raw_type.as_str(),
+        "group_announcement" | "group_board"
+    );
+    let Some(options) = customization else {
+        return !simplify || !announcement;
+    };
+    if options
+        .message_types
+        .as_ref()
+        .is_some_and(|types| !types.contains(&message.message_type))
     {
         return false;
     }
-    let other_system = !announcement && !recalled
-        && (message.message_type == MessageType::System || message.direction == MessageDirection::System);
+    let recalled =
+        message.lifecycle == LifecycleState::Recalled || message.raw_type.trim() == "2063";
+    if (!options.include_announcements && announcement)
+        || (!options.include_recalled_messages && recalled)
+        || (!options.include_deleted_messages
+            && message.lifecycle == LifecycleState::DeletedAtSource)
+    {
+        return false;
+    }
+    let other_system = !announcement
+        && !recalled
+        && (message.message_type == MessageType::System
+            || message.direction == MessageDirection::System);
     options.include_system_messages || !other_system
 }
 
 #[derive(Clone, Copy)]
-enum Field { Conversation, Time, Sender, Type, Lifecycle, Direction, Body, Media, Quote,
-    MessageId, ConversationId, SenderId, RawType, MediaHashes }
+enum Field {
+    Conversation,
+    Time,
+    Sender,
+    Type,
+    Lifecycle,
+    Direction,
+    Body,
+    Media,
+    Quote,
+    MessageId,
+    ConversationId,
+    SenderId,
+    RawType,
+    MediaHashes,
+}
 
 impl Field {
     fn label(self, pretty: bool) -> &'static str {
         match (self, pretty) {
-            (Self::Conversation, true) => "会话", (Self::Conversation, false) => "conversation",
-            (Self::Time, true) => "时间", (Self::Time, false) => "sent_at",
-            (Self::Sender, true) => "发送人", (Self::Sender, false) => "sender",
-            (Self::Type, true) => "消息类型", (Self::Type, false) => "message_type",
-            (Self::Lifecycle, true) => "状态", (Self::Lifecycle, false) => "lifecycle",
-            (Self::Direction, true) => "方向", (Self::Direction, false) => "direction",
-            (Self::Body, true) => "正文", (Self::Body, false) => "body_text",
-            (Self::Media, true) => "附件", (Self::Media, false) => "media_names",
-            (Self::Quote, true) => "引用消息", (Self::Quote, false) => "quoted_message_id",
-            (Self::MessageId, true) => "消息 ID", (Self::MessageId, false) => "stable_message_id",
-            (Self::ConversationId, true) => "会话 ID", (Self::ConversationId, false) => "conversation_id",
-            (Self::SenderId, true) => "发送人 ID", (Self::SenderId, false) => "sender_id",
-            (Self::RawType, true) => "原始类型", (Self::RawType, false) => "raw_type",
-            (Self::MediaHashes, true) => "附件哈希", (Self::MediaHashes, false) => "media_hashes",
+            (Self::Conversation, true) => "会话",
+            (Self::Conversation, false) => "conversation",
+            (Self::Time, true) => "时间",
+            (Self::Time, false) => "sent_at",
+            (Self::Sender, true) => "发送人",
+            (Self::Sender, false) => "sender",
+            (Self::Type, true) => "消息类型",
+            (Self::Type, false) => "message_type",
+            (Self::Lifecycle, true) => "状态",
+            (Self::Lifecycle, false) => "lifecycle",
+            (Self::Direction, true) => "方向",
+            (Self::Direction, false) => "direction",
+            (Self::Body, true) => "正文",
+            (Self::Body, false) => "body_text",
+            (Self::Media, true) => "附件",
+            (Self::Media, false) => "media_names",
+            (Self::Quote, true) => "引用消息",
+            (Self::Quote, false) => "quoted_message_id",
+            (Self::MessageId, true) => "消息 ID",
+            (Self::MessageId, false) => "stable_message_id",
+            (Self::ConversationId, true) => "会话 ID",
+            (Self::ConversationId, false) => "conversation_id",
+            (Self::SenderId, true) => "发送人 ID",
+            (Self::SenderId, false) => "sender_id",
+            (Self::RawType, true) => "原始类型",
+            (Self::RawType, false) => "raw_type",
+            (Self::MediaHashes, true) => "附件哈希",
+            (Self::MediaHashes, false) => "media_hashes",
         }
     }
 
-    fn value(self, package: &ExportPackage, names: &ExportNames<'_>, message: &MessageV1,
-             options: &ExportCustomization) -> Result<String, ExportError> {
+    fn value(
+        self,
+        package: &ExportPackage,
+        names: &ExportNames<'_>,
+        message: &MessageV1,
+        options: &ExportCustomization,
+    ) -> Result<String, ExportError> {
         Ok(match self {
             Self::Conversation => names.conversation(message).into(),
             Self::Time => options.timezone.format(&message.sent_at),
@@ -150,13 +210,23 @@ impl Field {
             Self::Lifecycle => enum_text(&message.lifecycle)?,
             Self::Direction => enum_text(&message.direction)?,
             Self::Body => message.body_text.clone().unwrap_or_default(),
-            Self::Media => message.media.iter().map(|item| item.original_name.as_deref().unwrap_or("未命名附件")).collect::<Vec<_>>().join(" | "),
+            Self::Media => message
+                .media
+                .iter()
+                .map(|item| item.original_name.as_deref().unwrap_or("未命名附件"))
+                .collect::<Vec<_>>()
+                .join(" | "),
             Self::Quote => message.quoted_message_id.clone().unwrap_or_default(),
             Self::MessageId => message.stable_message_id.clone(),
             Self::ConversationId => message.conversation_id.clone(),
             Self::SenderId => message.sender_id.clone().unwrap_or_default(),
             Self::RawType => message.raw_type.clone(),
-            Self::MediaHashes => message.media.iter().filter_map(|item| item.content_hash.as_deref()).collect::<Vec<_>>().join(" | "),
+            Self::MediaHashes => message
+                .media
+                .iter()
+                .filter_map(|item| item.content_hash.as_deref())
+                .collect::<Vec<_>>()
+                .join(" | "),
         })
     }
 }
@@ -164,99 +234,218 @@ impl Field {
 fn columns(options: &ExportCustomization) -> Vec<Field> {
     let f = &options.fields;
     let mut fields = Vec::new();
-    for (enabled, field) in [(f.conversation, Field::Conversation), (f.timestamp, Field::Time),
-        (f.sender, Field::Sender), (f.message_type, Field::Type), (f.lifecycle, Field::Lifecycle),
-        (f.direction, Field::Direction), (f.body, Field::Body), (f.media, Field::Media), (f.quote, Field::Quote)] {
-        if enabled { fields.push(field); }
+    for (enabled, field) in [
+        (f.conversation, Field::Conversation),
+        (f.timestamp, Field::Time),
+        (f.sender, Field::Sender),
+        (f.message_type, Field::Type),
+        (f.lifecycle, Field::Lifecycle),
+        (f.direction, Field::Direction),
+        (f.body, Field::Body),
+        (f.media, Field::Media),
+        (f.quote, Field::Quote),
+    ] {
+        if enabled {
+            fields.push(field);
+        }
     }
     if f.technical_ids {
-        fields.extend([Field::MessageId, Field::ConversationId, Field::SenderId, Field::RawType]);
-        if f.media { fields.push(Field::MediaHashes); }
+        fields.extend([
+            Field::MessageId,
+            Field::ConversationId,
+            Field::SenderId,
+            Field::RawType,
+        ]);
+        if f.media {
+            fields.push(Field::MediaHashes);
+        }
     }
     fields
 }
 
-pub(super) fn csv_header(output: &mut csv::Writer<File>, package: &ExportPackage,
-                          options: &ExportCustomization) -> Result<(), ExportError> {
-    output.write_record(columns(options).into_iter().map(|field| field.label(package.pretty)))?;
+pub(super) fn csv_header(
+    output: &mut csv::Writer<File>,
+    package: &ExportPackage,
+    options: &ExportCustomization,
+) -> Result<(), ExportError> {
+    output.write_record(
+        columns(options)
+            .into_iter()
+            .map(|field| field.label(package.pretty)),
+    )?;
     Ok(())
 }
 
-pub(super) fn csv_message(output: &mut csv::Writer<File>, package: &ExportPackage,
-    names: &ExportNames<'_>, message: &MessageV1, options: &ExportCustomization) -> Result<(), ExportError> {
-    let cells = columns(options).into_iter().map(|field| field.value(package, names, message, options)
-        .map(|value| safe_csv(&value))).collect::<Result<Vec<_>, _>>()?;
+pub(super) fn csv_message(
+    output: &mut csv::Writer<File>,
+    package: &ExportPackage,
+    names: &ExportNames<'_>,
+    message: &MessageV1,
+    options: &ExportCustomization,
+) -> Result<(), ExportError> {
+    let cells = columns(options)
+        .into_iter()
+        .map(|field| {
+            field
+                .value(package, names, message, options)
+                .map(|value| safe_csv(&value))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     output.write_record(cells)?;
     Ok(())
 }
 
-pub(super) fn html_header(output: &mut impl Write, package: &ExportPackage, options: &ExportCustomization,
-    for_print: bool, count: u64) -> Result<(), ExportError> {
-    output.write_all(html_document_start("归档导出", for_print,
-        options.layout == ExportLayout::Standard && package.pretty).as_bytes())?;
+pub(super) fn html_header(
+    output: &mut impl Write,
+    package: &ExportPackage,
+    options: &ExportCustomization,
+    for_print: bool,
+    count: u64,
+) -> Result<(), ExportError> {
+    output.write_all(
+        html_document_start(
+            "归档导出",
+            for_print,
+            options.layout == ExportLayout::Standard && package.pretty,
+        )
+        .as_bytes(),
+    )?;
     write!(output, "<section class=\"summary\"><p>{count} 条消息")?;
-    if options.fields.timestamp { write!(output, " · {}", options.timezone.label())?; }
+    if options.fields.timestamp {
+        write!(output, " · {}", options.timezone.label())?;
+    }
     output.write_all(b"</p></section>")?;
     Ok(())
 }
 
-pub(super) fn html_conversation(output: &mut impl Write, names: &ExportNames<'_>, id: &str,
-    options: &ExportCustomization) -> Result<(), ExportError> {
+pub(super) fn html_conversation(
+    output: &mut impl Write,
+    names: &ExportNames<'_>,
+    id: &str,
+    options: &ExportCustomization,
+) -> Result<(), ExportError> {
     output.write_all(b"<section class=\"conversation\">")?;
-    if options.fields.conversation { write!(output, "<h2>{}</h2>", html_escape(names.conversation_id(id)))?; }
+    if options.fields.conversation {
+        write!(
+            output,
+            "<h2>{}</h2>",
+            html_escape(names.conversation_id(id))
+        )?;
+    }
     Ok(())
 }
 
-pub(super) fn html_message(output: &mut impl Write, package: &ExportPackage, names: &ExportNames<'_>,
-    message: &MessageV1, options: &ExportCustomization) -> Result<(), ExportError> {
+pub(super) fn html_message(
+    output: &mut impl Write,
+    package: &ExportPackage,
+    names: &ExportNames<'_>,
+    message: &MessageV1,
+    options: &ExportCustomization,
+) -> Result<(), ExportError> {
     output.write_all(b"<article class=\"message\">")?;
     let mut header = Vec::new();
     for field in columns(options) {
-        if matches!(field, Field::Conversation | Field::Body | Field::Media) { continue; }
+        if matches!(field, Field::Conversation | Field::Body | Field::Media) {
+            continue;
+        }
         let value = field.value(package, names, message, options)?;
-        if value.is_empty() { continue; }
-        let display = if options.layout == ExportLayout::Compact && matches!(field, Field::Time | Field::Sender) {
+        if value.is_empty() {
+            continue;
+        }
+        let display = if options.layout == ExportLayout::Compact
+            && matches!(field, Field::Time | Field::Sender)
+        {
             value
-        } else { format!("{}：{value}", field.label(true)) };
+        } else {
+            format!("{}：{value}", field.label(true))
+        };
         header.push(format!("<span>{}</span>", html_escape(&display)));
     }
-    if !header.is_empty() { write!(output, "<header>{}</header>", header.join(" "))?; }
-    if options.fields.body { write!(output, "<p>{}</p>", html_escape(message.body_text.as_deref().unwrap_or_default()))?; }
+    if !header.is_empty() {
+        write!(output, "<header>{}</header>", header.join(" "))?;
+    }
+    if options.fields.body {
+        write!(
+            output,
+            "<p>{}</p>",
+            html_escape(message.body_text.as_deref().unwrap_or_default())
+        )?;
+    }
     if options.fields.media && !message.media.is_empty() {
-        write!(output, "<small class=\"media\">附件：{}</small>", html_escape(&Field::Media.value(package, names, message, options)?))?;
+        write!(
+            output,
+            "<small class=\"media\">附件：{}</small>",
+            html_escape(&Field::Media.value(package, names, message, options)?)
+        )?;
     }
     output.write_all(b"</article>")?;
     Ok(())
 }
 
-pub(super) fn markdown_header(output: &mut impl Write, options: &ExportCustomization,
-    count: u64) -> Result<(), ExportError> {
-    writeln!(output, "# 归档导出\n\n{count} 条消息{}\n",
-        if options.fields.timestamp { format!(" · {}", options.timezone.label()) } else { String::new() })?;
+pub(super) fn markdown_header(
+    output: &mut impl Write,
+    options: &ExportCustomization,
+    count: u64,
+) -> Result<(), ExportError> {
+    writeln!(
+        output,
+        "# 归档导出\n\n{count} 条消息{}\n",
+        if options.fields.timestamp {
+            format!(" · {}", options.timezone.label())
+        } else {
+            String::new()
+        }
+    )?;
     Ok(())
 }
 
-pub(super) fn markdown_conversation(output: &mut impl Write, names: &ExportNames<'_>, id: &str,
-    options: &ExportCustomization) -> Result<(), ExportError> {
-    if options.fields.conversation { writeln!(output, "## {}\n", markdown_escape(names.conversation_id(id)))?; }
+pub(super) fn markdown_conversation(
+    output: &mut impl Write,
+    names: &ExportNames<'_>,
+    id: &str,
+    options: &ExportCustomization,
+) -> Result<(), ExportError> {
+    if options.fields.conversation {
+        writeln!(
+            output,
+            "## {}\n",
+            markdown_escape(names.conversation_id(id))
+        )?;
+    }
     Ok(())
 }
 
-pub(super) fn markdown_message(output: &mut impl Write, package: &ExportPackage, names: &ExportNames<'_>,
-    message: &MessageV1, options: &ExportCustomization) -> Result<(), ExportError> {
+pub(super) fn markdown_message(
+    output: &mut impl Write,
+    package: &ExportPackage,
+    names: &ExportNames<'_>,
+    message: &MessageV1,
+    options: &ExportCustomization,
+) -> Result<(), ExportError> {
     let mut metadata = Vec::new();
     for field in columns(options) {
-        if matches!(field, Field::Conversation | Field::Body | Field::Media) { continue; }
+        if matches!(field, Field::Conversation | Field::Body | Field::Media) {
+            continue;
+        }
         let value = field.value(package, names, message, options)?;
-        if value.is_empty() { continue; }
-        let value = if options.layout == ExportLayout::Compact && matches!(field, Field::Time | Field::Sender) {
+        if value.is_empty() {
+            continue;
+        }
+        let value = if options.layout == ExportLayout::Compact
+            && matches!(field, Field::Time | Field::Sender)
+        {
             value
-        } else { format!("{}：{value}", field.label(true)) };
+        } else {
+            format!("{}：{value}", field.label(true))
+        };
         metadata.push(markdown_escape(&value));
     }
     if !metadata.is_empty() {
-        if options.layout == ExportLayout::Compact { writeln!(output, "**{}**\n", metadata.join(" · "))?; }
-        else { writeln!(output, "### {}\n", metadata.join(" · "))?; }
+        if options.layout == ExportLayout::Compact {
+            writeln!(output, "**{}**\n", metadata.join(" · "))?;
+        } else {
+            writeln!(output, "### {}\n", metadata.join(" · "))?;
+        }
     }
     if options.fields.body {
         if let Some(body) = &message.body_text {
@@ -268,7 +457,11 @@ pub(super) fn markdown_message(output: &mut impl Write, package: &ExportPackage,
         }
     }
     if options.fields.media && !message.media.is_empty() {
-        writeln!(output, "附件：{}\n", markdown_escape(&Field::Media.value(package, names, message, options)?))?;
+        writeln!(
+            output,
+            "附件：{}\n",
+            markdown_escape(&Field::Media.value(package, names, message, options)?)
+        )?;
     }
     Ok(())
 }
@@ -300,7 +493,9 @@ mod tests {
 
     #[test]
     fn independent_filters_intersect_with_type_selection() {
-        let mut message = crate::tests::fixture(ExportFormat::Md, false, false).messages.remove(0);
+        let mut message = crate::tests::fixture(ExportFormat::Md, false, false)
+            .messages
+            .remove(0);
         let mut options = ExportCustomization {
             include_system_messages: false,
             ..ExportCustomization::default()
@@ -357,7 +552,8 @@ mod tests {
             "includeRecalledMessages": false,
             "messageTypes": [],
             "timezone": "asia_shanghai"
-        })).unwrap();
+        }))
+        .unwrap();
         assert!(!options.fields.direction);
         assert!(options.fields.body);
         assert!(!options.fields.technical_ids);
@@ -365,9 +561,12 @@ mod tests {
         assert!(!options.include_recalled_messages);
         assert_eq!(options.message_types, Some(vec![]));
         assert_eq!(options.timezone, ExportTimezone::AsiaShanghai);
-        assert!(serde_json::from_value::<ExportCustomization>(serde_json::json!({
-            "includeRecalls": false
-        })).is_err());
+        assert!(
+            serde_json::from_value::<ExportCustomization>(serde_json::json!({
+                "includeRecalls": false
+            }))
+            .is_err()
+        );
     }
 
     #[test]
@@ -382,7 +581,16 @@ mod tests {
             assert_eq!(result.message_count, 1);
             assert_eq!(result.media_count, 1);
             let text = fs::read_to_string(path).unwrap();
-            for excluded in ["internal-", "测试会话", "active", "incoming", "@附件", "仅群", "消息类型", "生命周期"] {
+            for excluded in [
+                "internal-",
+                "测试会话",
+                "active",
+                "incoming",
+                "@附件",
+                "仅群",
+                "消息类型",
+                "生命周期",
+            ] {
                 assert!(!text.contains(excluded), "{format:?} leaked {excluded}");
             }
             assert!(text.contains("测试成员"));
@@ -397,11 +605,18 @@ mod tests {
                 assert!(text.contains("&lt;script&gt;"));
                 assert!(!text.contains("<script>"));
                 assert!(text.contains("default-src 'none'"));
-                assert_eq!(text.matches("<section").count(), text.matches("</section>").count());
+                assert_eq!(
+                    text.matches("<section").count(),
+                    text.matches("</section>").count()
+                );
             }
             if format == ExportFormat::Csv {
-                let mut reader = csv::Reader::from_reader(text.trim_start_matches('\u{feff}').as_bytes());
-                assert_eq!(reader.headers().unwrap(), &csv::StringRecord::from(vec!["时间", "发送人", "正文"]));
+                let mut reader =
+                    csv::Reader::from_reader(text.trim_start_matches('\u{feff}').as_bytes());
+                assert_eq!(
+                    reader.headers().unwrap(),
+                    &csv::StringRecord::from(vec!["时间", "发送人", "正文"])
+                );
                 let row = reader.records().next().unwrap().unwrap();
                 assert_eq!(&row[1], "'+测试成员");
                 assert_eq!(&row[2], "'=1+1\n普通消息提及群公告 <script>");
@@ -441,7 +656,14 @@ mod tests {
         let body = "```\n<script>alert(1)</script>\n![remote](https://example.invalid/image)\n````";
         package.messages[0].body_text = Some(body.into());
         let mut output = Vec::new();
-        markdown_message(&mut output, &package, &ExportNames::new(&package), &package.messages[0], package.customization.as_ref().unwrap()).unwrap();
+        markdown_message(
+            &mut output,
+            &package,
+            &ExportNames::new(&package),
+            &package.messages[0],
+            package.customization.as_ref().unwrap(),
+        )
+        .unwrap();
         let text = String::from_utf8(output).unwrap();
         assert!(text.contains(&format!("`````text\n{body}\n`````\n")));
     }

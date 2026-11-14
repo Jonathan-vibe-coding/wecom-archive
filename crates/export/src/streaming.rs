@@ -461,7 +461,12 @@ mod tests {
     #[test]
     fn customized_streams_match_filtered_in_memory_exports() {
         let directory = tempfile::tempdir().unwrap();
-        for format in [ExportFormat::Json, ExportFormat::Csv, ExportFormat::Html, ExportFormat::Md] {
+        for format in [
+            ExportFormat::Json,
+            ExportFormat::Csv,
+            ExportFormat::Html,
+            ExportFormat::Md,
+        ] {
             for layout in [ExportLayout::Compact, ExportLayout::Standard] {
                 for types in [None, Some(vec![])] {
                     let mut package = crate::tests::fixture(format, false, true);
@@ -480,8 +485,15 @@ mod tests {
                     });
                     let reference = directory.path().join("reference");
                     let stream = directory.path().join("stream");
-                    let original = export_package(&package, &reference, &AtomicBool::new(false)).unwrap();
-                    let result = export_streamed(&package, &FixtureSource::new(&package), &stream, &AtomicBool::new(false)).unwrap();
+                    let original =
+                        export_package(&package, &reference, &AtomicBool::new(false)).unwrap();
+                    let result = export_streamed(
+                        &package,
+                        &FixtureSource::new(&package),
+                        &stream,
+                        &AtomicBool::new(false),
+                    )
+                    .unwrap();
                     assert_eq!(fs::read(&reference).unwrap(), fs::read(&stream).unwrap());
                     assert_eq!(result.message_count, original.message_count);
                     assert_eq!(result.media_count, original.media_count);

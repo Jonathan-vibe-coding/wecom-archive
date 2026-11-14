@@ -1,5 +1,8 @@
 use archive_domain::{MediaIntegrity, MessageV1};
-use archive_export::{ExportCustomization, ExportError, ExportParticipant, ExportSource, ExportStatistics, includes_message};
+use archive_export::{
+    ExportCustomization, ExportError, ExportParticipant, ExportSource, ExportStatistics,
+    includes_message,
+};
 use archive_store::{ArchiveReadSnapshot, ArchiveStore, MessageQuery, StoreError};
 use chrono::{DateTime, Utc};
 use std::collections::{BTreeMap, BTreeSet};
@@ -104,7 +107,8 @@ impl<'a> ArchiveExportSource<'a> {
                             sender_ids.insert(id.clone());
                         }
                     }
-                    if !includes_message(&message, options.simplify, options.customization.as_ref()) {
+                    if !includes_message(&message, options.simplify, options.customization.as_ref())
+                    {
                         return Ok(());
                     }
                     all_conversations.insert(message.conversation_id.clone());
@@ -218,7 +222,11 @@ impl ExportSource for ArchiveExportSource<'_> {
         // announcements hidden by simplify. Keep at most two original records.
         let mut pending: Option<MessageV1> = None;
         let mut emit = |message: &MessageV1| {
-            if includes_message(message, self.options.simplify, self.options.customization.as_ref()) {
+            if includes_message(
+                message,
+                self.options.simplify,
+                self.options.customization.as_ref(),
+            ) {
                 visitor(message).map_err(SourceError::Export)
             } else {
                 Ok(())
