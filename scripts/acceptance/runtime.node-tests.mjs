@@ -5,7 +5,7 @@ import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
-import { availablePort, deadline, DesktopRun, fail, localFetch, localJsonRequest, portIsClosed, repoRoot, runChild, within } from "./runtime.mjs";
+import { availablePort, deadline, DesktopRun, diagnosticCode, fail, localFetch, localJsonRequest, portIsClosed, repoRoot, runChild, until, within } from "./runtime.mjs";
 
 test("owned directory checks reject parent traversal, sibling prefixes and the root itself", () => {
   const root = resolve("target/acceptance/synthetic");
@@ -40,6 +40,45 @@ test("test HTTP refuses other origins and redirects", async () => {
 test("deadline rejects a stalled operation and preserves successful results", async () => {
   await assert.rejects(deadline(new Promise(() => {}), 20, "SYNTHETIC_DEADLINE"), { code: "SYNTHETIC_DEADLINE" });
   assert.equal(await deadline(Promise.resolve(7), 5000, "UNUSED_DEADLINE"), 7);
+});
+
+test("startup diagnostics only probe owned loopback ports and redact CDP metadata", async () => {
+  const requests = [];
+  const server = createServer((request, response) => {
+    requests.push(request.url);
+    response.setHeader("Content-Type", "application/json");
+    if (request.url === "/json/list") response.end(JSON.stringify([
+      { type: "page", title: "secret-title", url: `http://user:secret-password@127.0.0.1:${server.address().port}/safe/path?secret-query#secret-token`, webSocketDebuggerUrl: "ws://secret-debugger" },
+      { type: "secret-type", url: "data:text/plain,secret-content" },
+    ]));
+    else if (request.url === "/json/version") response.end(JSON.stringify({ Browser: "Edg/157.0.4341.57", webSocketDebuggerUrl: "ws://secret-debugger", secret: "secret-version" }));
+    else response.end('{"secret":"secret-health"}');
+  });
+  await new Promise(done => server.listen(0, "127.0.0.1", done));
+  const port = server.address().port;
+  try {
+    const run = new DesktopRun("unused", "unused");
+    run.ports.add(port);
+    run.sessions.set("main", { name: "main", port, debugPort: port, origin: "https://example.invalid", child: { exitCode: 7, signalCode: null }, stopped: true, startupStage: "cdp-target" });
+    const [report] = await run.diagnostics();
+    assert.deepEqual(requests.sort(), ["/api/v1/health", "/json/list", "/json/version"]);
+    assert.deepEqual(report.child, { stopped: true, exitCode: 7, signal: null });
+    assert.equal(report.startupStage, "cdp-target");
+    assert.equal(report.health.status, 200);
+    assert.equal(report.cdpVersion.browserVersion, "157.0.4341.57");
+    assert.deepEqual(report.cdpTargets.targets, [{ type: "page", url: `http://127.0.0.1:${port}/safe/path` }, { type: "unknown", url: "non-http" }]);
+    assert.equal(JSON.stringify(report).includes("secret"), false);
+    run.ports.clear();
+    assert.equal((await run.diagnostics())[0].code, "UNOWNED_DIAGNOSTIC_PORT");
+    assert.equal(requests.length, 3);
+  } finally { server.closeAllConnections(); await new Promise(done => server.close(done)); }
+});
+
+test("startup waits preserve their deadline and report only bounded error codes", async () => {
+  await assert.rejects(until(() => false, 1, "HEALTH_TIMEOUT"), { code: "HEALTH_TIMEOUT" });
+  assert.equal(diagnosticCode(fail("CDP_TARGET_TIMEOUT")), "CDP_TARGET_TIMEOUT");
+  assert.equal(diagnosticCode({ code: "private/path?token=secret", message: "secret" }), "ACCEPTANCE_FAILED");
+  assert.equal(diagnosticCode(new Error("secret")), "ACCEPTANCE_FAILED");
 });
 
 test("port check distinguishes a listening TCP socket from a closed port", async () => {

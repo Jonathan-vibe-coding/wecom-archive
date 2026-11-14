@@ -58,6 +58,17 @@ jobs:
           key: windows-custom-export-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-${{ github.sha }}
           restore-keys: windows-custom-export-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
 
+      - name: Upload cached binaries for local diagnostics
+        if: ${{ hashFiles('target/release/WeComArchive.exe') != '' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-cached-unverified-build
+          path: |
+            target/release/WeComArchive.exe
+            target/release/examples/acceptance-fixtures.exe
+          if-no-files-found: ignore
+          retention-days: 1
+
       - name: Prepare the pinned Rust toolchain and offline dependencies
         run: |
           $toolchain = Get-Content -LiteralPath rust-toolchain.toml -Raw
@@ -110,3 +121,14 @@ jobs:
           archive: false
           if-no-files-found: error
           retention-days: 7
+
+      - name: Upload unverified binaries for isolated desktop diagnostics
+        if: ${{ failure() && steps.build.outcome == 'failure' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-unverified-build
+          path: |
+            target/release/WeComArchive.exe
+            target/release/examples/acceptance-fixtures.exe
+          if-no-files-found: ignore
+          retention-days: 3
